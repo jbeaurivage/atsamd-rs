@@ -478,11 +478,11 @@ pub unsafe trait Buffer<T: Beat> {
 unsafe impl<T: Beat, const N: usize> Buffer<T> for &mut [T; N] {
     #[inline]
     fn to_dma_ptr(&mut self) -> *mut T {
-        let ptr = self.as_mut_ptr();
+        let ptrs = self.as_mut_ptr_range();
         if self.incrementing() {
-            unsafe { ptr.add(N) }
+            ptrs.end
         } else {
-            ptr
+            ptrs.start
         }
     }
 
@@ -500,11 +500,11 @@ unsafe impl<T: Beat, const N: usize> Buffer<T> for &mut [T; N] {
 unsafe impl<T: Beat> Buffer<T> for &mut [T] {
     #[inline]
     fn to_dma_ptr(&mut self) -> *mut T {
-        let ptr = self.as_mut_ptr();
+        let ptrs = self.as_mut_ptr_range();
         if self.incrementing() {
-            unsafe { ptr.add(self.len()) }
+            ptrs.end
         } else {
-            ptr
+            ptrs.start
         }
     }
 
