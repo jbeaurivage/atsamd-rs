@@ -347,52 +347,23 @@ where
         // be the same address as the current block descriptor.
         // Otherwise we set it to 0 (terminates the transaction)
         // TODO: Enable support for linked lists (?)
+        #[allow(clippy::zero_ptr)]
         let descaddr = if circular {
             // SAFETY This is safe as we are only reading the descriptor's address,
             // and not actually writing any data to it. We also assume the descriptor
             // will never be moved.
-            &DESCRIPTOR_SECTION[ID as usize] as *const _ as u32
+            &mut DESCRIPTOR_SECTION[ID as usize] as *mut _
         } else {
-            0
+            0 as *mut _
         };
 
-        let source = &mut buffers.as_mut().source;
-        let src_ptr = source.dma_ptr();
-        let src_inc = source.incrementing();
-        let src_len = source.buffer_len();
-
-        let dest = &mut buffers.as_mut().destination;
-        let dst_ptr = dest.dma_ptr();
-        let dst_inc = dest.incrementing();
-        let dst_len = dest.buffer_len();
-
-        let length = core::cmp::max(src_len, dst_len);
-
-        let btctrl = BlockTransferControl::new()
-            .with_srcinc(src_inc)
-            .with_dstinc(dst_inc)
-            .with_beatsize(BufferPairBeat::<B>::BEATSIZE)
-            .with_valid(true);
-
-        let xfer_descriptor = DmacDescriptor {
-            // Next descriptor address:  0x0 terminates the transaction (no linked list),
-            // any other address points to the next block descriptor
-            descaddr,
-            // Source address: address of the last beat transfer source in block
-            srcaddr: src_ptr as u32,
-            // Destination address: address of the last beat transfer destination in block
-            dstaddr: dst_ptr as u32,
-            // Block transfer count: number of beats in block transfer
-            btcnt: length as u16,
-            // Block transfer control: Datasheet  section 19.8.2.1 p.329
-            btctrl,
-        };
+        let descriptor = get_descriptor(&mut buffers, descaddr);
 
         // SAFETY this is safe as long as we ONLY write to the descriptor
         // belonging to OUR channel. We assume this is the only place
         // in the entire library that this section or the array
         // will be written to.
-        DESCRIPTOR_SECTION[ID as usize] = xfer_descriptor;
+        DESCRIPTOR_SECTION[ID as usize] = descriptor;
 
         Transfer {
             buffers,
@@ -492,5 +463,138 @@ where
         atomic::fence(atomic::Ordering::Acquire); // ▼
 
         (self.buffers, chan, self.payload)
+    }
+}
+
+pub struct LinkedDescriptor<B>
+where
+    B: AnyBufferPair,
+{
+    buffers: B,
+    descriptor: DmacDescriptor,
+}
+
+impl<B> LinkedDescriptor<B>
+where
+    B: AnyBufferPair,
+{
+    ///
+    ///
+    /// # Safety
+    pub unsafe fn new(mut buffers: B) -> Self {
+        let src_len = buffers.as_ref().source.buffer_len();
+        let dst_len = buffers.as_ref().destination.buffer_len();
+
+        if src_len > 1 && dst_len > 1 {
+            assert_eq!(src_len, dst_len);
+        }
+
+        // We use 0x0 as a placeholder. The address of the next link
+        // will be added here eventually.
+        #[allow(clippy::zero_ptr)]
+        let descriptor = get_descriptor(&mut buffers, 0 as *mut _);
+
+        Self {
+            buffers,
+            descriptor,
+        }
+    }
+
+    ///
+    ///
+    /// # Safety
+    pub unsafe fn link<'a, C: AnyBufferPair>(
+        &mut self,
+        next: &'a mut LinkedDescriptor<C>,
+    ) -> LinkedDescriptorConstructor<'a, C> {
+        self.descriptor.descaddr = &mut next.descriptor as *mut _;
+        LinkedDescriptorConstructor { last: next }
+    }
+}
+
+pub struct LinkedDescriptorConstructor<'a, B>
+where
+    B: AnyBufferPair,
+{
+    last: &'a mut LinkedDescriptor<B>,
+}
+
+impl<'a, B> LinkedDescriptorConstructor<'a, B>
+where
+    B: AnyBufferPair,
+{
+    ///
+    ///
+    /// # Safety
+    pub unsafe fn link<C: AnyBufferPair>(
+        &mut self,
+        next: &'a mut LinkedDescriptor<C>,
+    ) -> LinkedDescriptorConstructor<'a, C> {
+        self.last.descriptor.descaddr = &mut next.descriptor as *mut _;
+        LinkedDescriptorConstructor { last: next }
+    }
+
+    ///
+    ///
+    /// # Safety
+    pub unsafe fn transfer_unchecked<P, ChanStatus, const ID: u8>(
+        self,
+        chan: Channel<Ready, ID>,
+        payload: P,
+    ) -> Transfer<B, P, Ready, ID>
+    where
+        ChanStatus: Status,
+    {
+        // Setting the next descriptor pointer to 0 terminates the transaction
+        #[allow(clippy::zero_ptr)]
+        let descriptor = get_descriptor(&mut self.last.buffers, 0 as *mut _);
+
+        // SAFETY this is safe as long as we ONLY write to the descriptor
+        // belonging to OUR channel. We assume this is the only place
+        // in the entire library that this section or the array
+        // will be written to.
+        DESCRIPTOR_SECTION[ID as usize] = descriptor;
+
+        Transfer {
+            buffers: self.last.buffers,
+            chan,
+            payload,
+        }
+    }
+}
+
+unsafe fn get_descriptor<B: AnyBufferPair>(
+    buffers: &mut B,
+    descaddr: *mut DmacDescriptor,
+) -> DmacDescriptor {
+    let source = &mut buffers.as_mut().source;
+    let src_ptr = source.dma_ptr();
+    let src_inc = source.incrementing();
+    let src_len = source.buffer_len();
+
+    let dest = &mut buffers.as_mut().destination;
+    let dst_ptr = dest.dma_ptr();
+    let dst_inc = dest.incrementing();
+    let dst_len = dest.buffer_len();
+
+    let length = core::cmp::max(src_len, dst_len);
+
+    let btctrl = BlockTransferControl::new()
+        .with_srcinc(src_inc)
+        .with_dstinc(dst_inc)
+        .with_beatsize(BufferPairBeat::<B>::BEATSIZE)
+        .with_valid(true);
+
+    DmacDescriptor {
+        // Next descriptor address
+        descaddr,
+        // Source address: address of the last beat transfer source in block
+        srcaddr: src_ptr as *mut (),
+        // Destination address: address of the last beat transfer destination in block
+        dstaddr: dst_ptr as *mut (),
+        // Block transfer count: number of beats in block transfer
+        btcnt: length as u16,
+        // Block transfer control: Datasheet  section 19.8.2.1 p.329
+        btctrl,
     }
 }

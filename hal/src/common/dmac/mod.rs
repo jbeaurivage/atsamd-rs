@@ -150,7 +150,7 @@ use modular_bitfield::prelude::*;
 pub use dma_controller::{BurstLength, FifoThreshold};
 pub use dma_controller::{DmaController, PriorityLevel, TriggerAction, TriggerSource};
 use transfer::BeatSize;
-pub use transfer::{Beat, Buffer, BufferPair, Transfer};
+pub use transfer::{Beat, Buffer, BufferPair, LinkedDescriptor, Transfer};
 
 #[cfg(all(feature = "samd11", feature = "max-channels"))]
 #[macro_export]
@@ -241,18 +241,18 @@ pub struct BlockTransferControl {
 pub struct DmacDescriptor {
     btctrl: BlockTransferControl,
     btcnt: u16,
-    srcaddr: u32,
-    dstaddr: u32,
-    descaddr: u32,
+    srcaddr: *mut (),
+    dstaddr: *mut (),
+    descaddr: *mut DmacDescriptor,
 }
 
 #[doc(hidden)]
 pub const DEFAULT_DESCRIPTOR: DmacDescriptor = DmacDescriptor {
     btctrl: BlockTransferControl::new(),
     btcnt: 0,
-    srcaddr: 0,
-    dstaddr: 0,
-    descaddr: 0,
+    srcaddr: 0 as *mut _,
+    dstaddr: 0 as *mut _,
+    descaddr: 0 as *mut DmacDescriptor,
 };
 
 // Writeback section. This static variable should never be written to in an
