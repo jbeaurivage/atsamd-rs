@@ -221,7 +221,9 @@ unsafe impl<T: Beat> Buffer for &mut T {
 // BufferPair
 //==============================================================================
 
-pub struct BufferPair<S, D>
+/// Struct holding the source and destination buffers of a
+/// [`Transfer`](Transfer).
+pub struct BufferPair<S, D = S>
 where
     S: Buffer,
     D: Buffer<Beat = S::Beat>,
@@ -309,7 +311,7 @@ where
         B::Dst: 'static,
     {
         let src_len = buffers.as_ref().source.buffer_len();
-        let dst_len = buffers.as_ref().source.buffer_len();
+        let dst_len = buffers.as_ref().destination.buffer_len();
 
         if src_len > 1 && dst_len > 1 {
             assert_eq!(src_len, dst_len);
@@ -423,6 +425,28 @@ where
             chan,
             payload: self.payload,
         }
+    }
+}
+
+/// These methods are available to a `Transfer` holding a `Ready` channel and a
+/// `BufferPair` holding two arrays of equal type and length
+impl<B, P, const N: usize, const ID: u8> Transfer<BufferPair<&'static mut [B; N]>, P, Ready, ID>
+where
+    B: 'static + Beat,
+{
+    /// Create a new `Transfer` from static array references of the same type
+    /// and length. When two array references are available (instead of slice
+    /// references), it is recommended to use this function over
+    /// [`Transfer::new`](Transfer::new), because it provides compile-time
+    /// checking that the array lengths match. It therefore does not panic, and
+    /// saves some runtime checking of the array lengths.
+    pub fn new_from_arrays(
+        buffers: BufferPair<&'static mut [B; N]>,
+        chan: Channel<Ready, ID>,
+        circular: bool,
+        payload: P,
+    ) -> Self {
+        unsafe { Self::new_unchecked(buffers, chan, circular, payload) }
     }
 }
 
