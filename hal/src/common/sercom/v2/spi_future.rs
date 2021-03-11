@@ -184,16 +184,19 @@ use crate::typelevel::NoneT;
 use super::spi::{AnySpi, Error, Flags};
 
 #[cfg(feature = "min-samd51g")]
-use super::spi::{Config, DynLength, Mode, Spi, SpiLength, StaticLength, TxOrRx, ValidConfig};
+use {
+    super::spi::{Config, DynLength, Mode, Spi, SpiLength, StaticLength, TxOrRx, ValidConfig},
+    typenum::Unsigned,
+};
+
+#[cfg(any(feature = "samd11", feature = "samd21"))]
+use {super::spi::SpiWord, core::mem::size_of};
+
+#[cfg(any(feature = "samd11", feature = "samd21"))]
+type Data = u16;
 
 #[cfg(feature = "min-samd51g")]
-use generic_array::typenum::Unsigned;
-
-#[cfg(any(feature = "samd11", feature = "samd21"))]
-use core::mem::size_of;
-
-#[cfg(any(feature = "samd11", feature = "samd21"))]
-use super::spi::SpiWord;
+type Data = u32;
 
 //=============================================================================
 // CheckBufLen
@@ -322,7 +325,7 @@ where
 
     #[inline]
     fn deassert(&mut self) {
-        self.set_low().unwrap();
+        self.set_high().unwrap();
     }
 }
 
@@ -461,7 +464,7 @@ where
                 }
             }
             let word = u32::from_le_bytes(bytes);
-            unsafe { self.spi.as_mut().write_data(word) };
+            unsafe { self.spi.as_mut().write_data(word as Data) };
             self.sent += self.spi.step();
         }
         if self.sent >= buf.len() {
@@ -482,7 +485,7 @@ where
         if self.rcvd < self.sent {
             let buf = unsafe { buf.get_unchecked_mut(self.rcvd..) };
             let mut data = buf.into_iter();
-            let word = unsafe { self.spi.as_mut().read_data() };
+            let word = unsafe { self.spi.as_mut().read_data() as u32 };
             let bytes = word.to_le_bytes();
             let mut iter = bytes.iter();
             for _ in 0..self.spi.step() {

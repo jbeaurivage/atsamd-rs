@@ -198,7 +198,7 @@ impl DmaController {
         // SAFETY This is safe because the use of bitfields ensures that only the
         // LVLENx bits are written to. The fact that we are given a mask means we need
         // to do the bit-level setting ourselves.
-            let mask: u16 = mask.into();
+        let mask: u16 = mask.into();
         unsafe {
             self.dmac.ctrl.modify(|r, w| w.bits(r.bits() | mask));
         }
@@ -210,7 +210,7 @@ impl DmaController {
         // SAFETY This is safe because the use of bitfields ensures that only the
         // LVLENx bits are written to. The fact that we are given a mask means we need
         // to do the bit-level clearing ourselves.
-            let mask: u16 = mask.into(); 
+        let mask: u16 = mask.into();
         unsafe {
             self.dmac.ctrl.modify(|r, w| w.bits(r.bits() & !mask));
         }
@@ -223,7 +223,7 @@ impl DmaController {
         // SAFETY This is safe because the use of bitfields ensures that only the
         // RRLVLENx bits are written to. The fact that we are given a mask means we need
         // to do the bit-level setting ourselves.
-            let mask: u32 = mask.into();
+        let mask: u32 = mask.into();
         unsafe {
             self.dmac.prictrl0.modify(|r, w| w.bits(r.bits() | mask));
         }
@@ -236,7 +236,7 @@ impl DmaController {
         // SAFETY This is safe because the use of bitfields ensures that only the
         // RRLVLENx bits are written to. The fact that we are given a mask means we need
         // to do the bit-level clearing ourselves.
-            let mask: u32 = mask.into();
+        let mask: u32 = mask.into();
         unsafe {
             self.dmac.prictrl0.modify(|r, w| w.bits(r.bits() & !mask));
         }
